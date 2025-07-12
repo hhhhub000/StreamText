@@ -1,0 +1,24 @@
+# config.py.example
+
+# このファイルをコピーして `config.py` という名前で保存し、
+# 自分の設定に書き換えてください。
+
+# --- Hugging Face 関連 ---
+# https://huggingface.co/settings/tokens から取得したアクセストークン
+HF_TOKEN = "YOUR_HUGGINGFACE_TOKEN"
+
+
+# --- Whisperモデル関連 ---
+# 使用するモデル名: "tiny", "base", "small", "medium", "large"
+# 小さいほど高速ですが、精度は低下します。PCスペックに合わせて選択してください。
+WHISPER_MODEL = "base"
+
+
+# --- 処理設定 ---
+# 音声を何秒ごとに区切って処理するか
+# PCのスペックに応じて調整してください。値を大きくすると一度に処理する量が増えます。
+INTERVAL_SECONDS = 7
+
+# 使用するデバイス: "auto", "cuda", "cpu"
+# "auto" に設定すると、NVIDIA GPU (CUDA) が利用可能であれば自動的にGPUを使用します。
+DEVICE = "auto"
