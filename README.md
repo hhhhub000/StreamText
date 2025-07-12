@@ -39,8 +39,8 @@ This is a desktop application that performs real-time transcription of your PC's
 #### 1. リポジトリをクローン (Clone the Repository)
 
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git)
-cd YOUR_REPOSITORY
+git clone https://github.com/hhhhub000/StreamText.git
+cd StreamText
 ```
 
 #### 2. 必要なライブラリをインストール (Install Dependencies)
