@@ -20,52 +20,58 @@ class SignalEmitter(QObject):
     error_received = Signal(str)
 
 class DiarizationWorker(threading.Thread):
-    def __init__(self, hf_token, model_name, device, interval):
+    def __init__(self, hf_token, model_name, device_str, interval, mic_name=None):
         super().__init__()
         self.hf_token = hf_token
         self.model_name = model_name
-        self.device = device
+        self.device_str = device_str  # whisper用
+        self.device = torch.device(device_str)  # pyannote用
         self.interval_seconds = interval
         self.emitter = SignalEmitter()
         self._stop_event = threading.Event()
         self.sample_rate = 16000
+        self.mic_name = mic_name
 
     def run(self):
         try:
             self.emitter.text_received.emit("モデルをロード中...\n")
-            whisper_model = whisper.load_model(self.model_name, device=self.device)
+            whisper_model = whisper.load_model(self.model_name, device=self.device_str)
             diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1", use_auth_token=self.hf_token
             ).to(self.device)
             self.emitter.text_received.emit("モデルのロード完了。文字起こしを開始します。\n")
 
-            with sc.get_microphone(id=str(sc.default_speaker().name), include_loopback=True).recorder(samplerate=self.sample_rate) as mic:
+            # 録音デバイスの選択
+            if self.mic_name:
+                mic_dev = sc.get_microphone(id=self.mic_name, include_loopback=True)
+            else:
+                mic_dev = sc.get_microphone(id=str(sc.default_speaker().name), include_loopback=True)
+
+            with mic_dev.recorder(samplerate=self.sample_rate) as mic:
                 while not self._stop_event.is_set():
                     audio_data = mic.record(numframes=self.sample_rate * self.interval_seconds)
-                    audio_tensor = torch.from_numpy(audio_data.T).float().to(self.device)
-                    
+                    # モノラル変換
+                    if audio_data.ndim > 1:
+                        audio_data = np.mean(audio_data, axis=1)
+                    audio_tensor = torch.from_numpy(audio_data).float().to(self.device)
                     diarization_input = {"waveform": audio_tensor.unsqueeze(0), "sample_rate": self.sample_rate}
                     diarization = diarization_pipeline(diarization_input)
 
-                    audio_np = audio_data.flatten().astype(np.float32)
+                    audio_np = audio_data.astype(np.float32)
                     transcription_result = whisper_model.transcribe(audio_np, fp16=False, language="ja", word_timestamps=True)
 
                     if not transcription_result["segments"]: continue
 
                     word_timestamps = [word for segment in transcription_result['segments'] for word in segment['words']]
-                    
                     speaker_texts = {}
                     for segment, _, speaker in diarization.itertracks(yield_label=True):
                         if speaker not in speaker_texts: speaker_texts[speaker] = []
-                        
                         words_in_segment = [wt['word'] for wt in word_timestamps if wt['start'] >= segment.start and wt['end'] <= segment.end]
                         if words_in_segment:
                             speaker_texts[speaker].append("".join(words_in_segment))
-                    
                     output_text = "".join(f"[{speaker}]: {' '.join(texts)}\n" for speaker, texts in speaker_texts.items() if texts)
                     if output_text:
                         self.emitter.text_received.emit(output_text)
-
         except Exception as e:
             self.emitter.error_received.emit(f"エラーが発生しました:\n{e}")
 
@@ -101,25 +107,26 @@ class MainWindow(QMainWindow):
         if config.HF_TOKEN == "YOUR_HUGGINGFACE_TOKEN" or not config.HF_TOKEN:
             QMessageBox.critical(self, "トークンエラー", "config.pyファイルにHugging Faceのアクセストークンを設定してください。")
             return
-            
         self.text_edit.clear()
-        
-        # configからデバイス設定を読み込む
         device = config.DEVICE
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # configから設定を渡してワーカーを生成
+        # 利用可能な録音デバイス一覧を取得
+        mic_list = sc.all_microphones(include_loopback=True)
+        mic_names = [mic.name for mic in mic_list]
+        # ステレオミキサーや仮想ケーブルがあれば自動選択、なければデフォルト
+        preferred = [name for name in mic_names if "stereo mix" in name.lower() or "cable" in name.lower()]
+        mic_name = preferred[0] if preferred else None
         self.worker = DiarizationWorker(
             hf_token=config.HF_TOKEN,
             model_name=config.WHISPER_MODEL,
-            device=device,
-            interval=config.INTERVAL_SECONDS
+            device_str=device,
+            interval=config.INTERVAL_SECONDS,
+            mic_name=mic_name
         )
         self.worker.emitter.text_received.connect(self.update_text)
         self.worker.emitter.error_received.connect(self.show_error)
         self.worker.start()
-
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
 
