@@ -136,6 +136,12 @@ class MainWindow(QMainWindow):
             self.worker.join()
             self.worker = None
         self.text_edit.append("\n--- 停止しました ---")
+        # ファイル出力処理
+        text = self.text_edit.toPlainText()
+        import datetime
+        filename = f"transcription_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(text)
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         
